@@ -681,8 +681,11 @@ def halaman_laporan(mulai, akhir, performa, dana, cs, status, meta_rentang=None)
     with t2:
         tab_jatah(dana, cs)
     with t3:
-        # Rekomendasi dikunci, password sama dengan admin
-        if is_admin():
+        # Rekomendasi selalu dikunci, password sama dengan admin.
+        # Kalau ADMIN_PASSWORD belum diatur, tetap terkunci (tidak dibuka).
+        if not password_admin():
+            st.warning("Rekomendasi dikunci. Atur ADMIN_PASSWORD di Secrets untuk membukanya.", icon="🔒")
+        elif st.session_state.get("admin_ok", False):
             tab_rekomendasi(df)
         else:
             form_login("login_rekomendasi", "Rekomendasi khusus admin. Masukkan password admin untuk melihat.")
