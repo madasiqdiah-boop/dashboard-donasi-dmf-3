@@ -1,4 +1,4 @@
-"""Dashboard Laporan Iklan Interaksi DMF 2 Kabupaten Serang."""
+"""Dashboard Laporan Iklan Interaksi DMF 3 Kabupaten Serang."""
 import pandas as pd
 import streamlit as st
 
@@ -14,8 +14,15 @@ import laporan_pdf
 
 load_dotenv()
 
+# data_source membaca META_AKUN dari environment; salin dari Secrets kalau ada.
+try:
+    if st.secrets.get("META_AKUN") and not os.environ.get("META_AKUN"):
+        os.environ["META_AKUN"] = str(st.secrets["META_AKUN"])
+except Exception:
+    pass
+
 st.set_page_config(
-    page_title="Dashboard DMF 2",
+    page_title="Dashboard DMF 3",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -287,11 +294,11 @@ def ambil_status(cs_csv):
     """{nama CS: jumlah iklan aktif}, atau None kalau Meta belum tersambung.
     Diambil ulang tiap 2 jam supaya tidak cepat kena batas permintaan Meta."""
     token = rahasia("META_ACCESS_TOKEN")
-    akun = rahasia("META_AD_ACCOUNT_IDS")
+    akun = [a["akun"] for a in ds.aturan_meta()]
     if not token or not akun:
         return None
     cs = pd.read_json(io.StringIO(cs_csv))
-    return ds.status_campaign(token, str(akun).split(","), cs)
+    return ds.status_campaign(token, akun, cs)
 
 
 @st.cache_resource
@@ -370,8 +377,8 @@ def ambil_meta_rentang(mulai, akhir, cs_json):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def ambil_saldo_akun():
-    """Batas pengeluaran & sisa akun iklan HKM 2 (dari Meta)."""
-    token, akun = rahasia("META_ACCESS_TOKEN"), rahasia("META_AKUN_HKM2")
+    """Batas pengeluaran & sisa akun iklan pertama di META_AKUN (dari Meta)."""
+    token, akun = rahasia("META_ACCESS_TOKEN"), (rahasia("META_AKUN") or "").split(",")[0].strip().removeprefix("act_")
     if not token or not akun:
         return None
     return ds.saldo_akun(token, akun)
@@ -412,13 +419,7 @@ def muat_data(cs):
     sheet_id = rahasia("SHEET_ID")
     isi_xlsx, _ = ambil_sheet(sheet_id)
 
-    isi_recap = None
-    recap_id = rahasia("SHEET_DONASI_ID")
-    if recap_id:
-        try:
-            isi_recap, _ = ambil_sheet(recap_id)
-        except Exception as e:
-            peringatan.append(f"Sheet donasi (RECAP) tidak bisa diambil, pakai Rekap Admin: {e}")
+    isi_recap = None  # DMF 3: donasi dari tab Admin di sheet yang sama
 
     cs_json = cs.to_json()
     performa, dana, tak_dikenal = olah_sheet(isi_xlsx, isi_recap, cs_json)
@@ -618,7 +619,7 @@ def tab_jatah(dana, cs):
         pakai_total=False,
     )
     st.caption(
-        "Akumulasi semua bulan, dari sheet **Dana Iklan**. Sisa Iklan = kolom "
+        "Akumulasi semua bulan, dari tab **CS** di sheet. Sisa Iklan = kolom "
         "Keterangan (merah = modal sudah habis/minus)."
     )
 
@@ -671,7 +672,7 @@ def halaman_laporan(mulai, akhir, performa, dana, cs, status, meta_rentang=None)
     except Exception as e:
         st.caption(f"PDF belum bisa dibuat: {e}")
     else:
-        nama_file = f"Laporan DMF 2 {mulai:%d-%m-%Y}" + ("" if mulai == akhir else f" sd {akhir:%d-%m-%Y}") + ".pdf"
+        nama_file = f"Laporan DMF 3 {mulai:%d-%m-%Y}" + ("" if mulai == akhir else f" sd {akhir:%d-%m-%Y}") + ".pdf"
         st.download_button("📄 Unduh PDF", data=isi_pdf, file_name=nama_file, mime="application/pdf")
 
     t1, t2, t3 = st.tabs(["📋 Laporan", "💰 Jatah & Sisa", "🚀 Rekomendasi"])
@@ -873,7 +874,7 @@ def halaman_login():
     with st.container(key="kotak_login"):
         st.markdown(
             '<div class="judul" style="justify-content:center;margin-top:3rem">'
-            '<span class="ikon">📊</span><span class="teks">Dashboard DMF 2</span></div>'
+            '<span class="ikon">📊</span><span class="teks">Dashboard DMF 3</span></div>'
             '<div class="sub" style="text-align:center">Masuk dulu untuk lihat laporan ✨</div>',
             unsafe_allow_html=True,
         )
@@ -894,7 +895,7 @@ halaman_login()
 
 st.markdown(
     '<div class="judul"><span class="ikon">📊</span>'
-    '<span class="teks">Laporan Iklan DMF 2</span></div>',
+    '<span class="teks">Laporan Iklan DMF 3</span></div>',
     unsafe_allow_html=True,
 )
 

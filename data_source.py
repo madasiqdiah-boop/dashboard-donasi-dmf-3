@@ -1,15 +1,13 @@
 """
-Sumber data dashboard.
+Sumber data dashboard DMF 3.
 
 Biaya iklan, nomor, dan status campaign: langsung dari Meta Ads.
 
-Dari Google Sheet "Laporan Iklan Interaksi DMF 2" hanya:
-- Dana Iklan   : modal iklan per CS, akumulasi, dan sisa (kolom Keterangan)
-- RECAP (spreadsheet donasi terpisah): data transfer donasi mentah, sumber
-  resi & donasi. Bulan = bulan tanggal transfer.
-
-Cara hitung mengikuti rumus sheet bulanan (versi September 2026), tapi
-tanpa batas 1.000 baris yang membuat sheet Juli/Agustus kurang hitung.
+Dari Google Sheet DMF 3 (SHEET_ID):
+- CS    : daftar CS (Nama Akun), modal (Penunaian), profit/loss total,
+          dan sisa dana per CS.
+- Admin : data transfer donasi (TANGGAL, NAMA CS, KET NOMOR, NOMINAL),
+          sumber resi & donasi. Bulan = bulan tanggal transfer.
 
 Data donatur (nama, nomor WA) TIDAK pernah dikeluarkan dari modul ini,
 hanya angka rekap per CS.
@@ -98,7 +96,7 @@ def unduh_sheet(sheet_id: str, akun_layanan: dict | None = None) -> bytes:
 def baca_sheet(isi_xlsx: bytes) -> dict:
     return pd.read_excel(
         io.BytesIO(isi_xlsx),
-        sheet_name=["Rekap Admin", "Dana Iklan"],
+        sheet_name=["Admin", "CS"],
         header=None,
         engine="openpyxl",
     )
@@ -107,41 +105,6 @@ def baca_sheet(isi_xlsx: bytes) -> dict:
 # =========================================================
 # OLAH DATA
 # =========================================================
-
-def olah_resi(rekap: pd.DataFrame) -> pd.DataFrame:
-    """Rekap Admin.
-
-    Cadangan kalau RECAP tidak tersedia.
-    Kiri : D=Tanggal, E=Nama CS, I=Ket Nomor, K=Nominal, N=Keterangan
-    Kanan: P=Tanggal, Q=Nama CS, U=Ket Nomor (untuk hitung resi Perdana)
-    """
-    df = rekap.iloc[2:].copy()
-    kol = lambda huruf: df.iloc[:, ord(huruf) - ord("A")] if ord(huruf) - ord("A") < df.shape[1] else pd.Series(index=df.index, dtype=object)
-
-    tgl_kiri = pd.to_datetime(kol("D"), errors="coerce").dt.normalize()
-    tgl_kanan = pd.to_datetime(kol("P"), errors="coerce").dt.normalize()
-    ket = kol("I").map(norm)
-    ket_donasi = kol("N").map(norm)
-    nominal = kol("K").map(angka)
-    kiri = pd.DataFrame({
-        "tanggal": tgl_kiri,
-        "kunci": kol("E").map(norm),
-        "gulungan": (ket == "gulungan").astype(int),
-        "donasi_perdana": nominal.where(ket_donasi == "perdana", 0.0),
-        "donasi_gulungan": nominal.where(ket_donasi == "gulungan", 0.0),
-    })
-    kanan = pd.DataFrame({
-        "tanggal": tgl_kanan,
-        "kunci": kol("Q").map(norm),
-        "perdana": (kol("U").map(norm) == "perdana").astype(int),
-    })
-
-    kiri = kiri[(kiri["kunci"] != "") & kiri["tanggal"].notna()]
-    kanan = kanan[(kanan["kunci"] != "") & kanan["tanggal"].notna()]
-    a = kiri.groupby(["tanggal", "kunci"], as_index=False).sum()
-    b = kanan.groupby(["tanggal", "kunci"], as_index=False).sum()
-    return a.merge(b, on=["tanggal", "kunci"], how="outer").fillna(0)
-
 
 def jenis_resi(teks) -> str:
     """'PERDANA' / 'PERRDANA' -> 'perdana', 'GULUNGAN' -> 'gulungan'."""
@@ -153,16 +116,22 @@ def jenis_resi(teks) -> str:
     return ""
 
 
-def olah_recap(isi_xlsx: bytes) -> pd.DataFrame:
-    """RECAP: Timestamp, TANGGAL, NAMA CS, ..., KET NOMOR, BANK, NOMINAL."""
-    df = pd.read_excel(io.BytesIO(isi_xlsx), sheet_name="RECAP", header=0, engine="openpyxl")
-    tanggal = pd.to_datetime(df["TANGGAL"], errors="coerce")
-    tanggal = tanggal.fillna(pd.to_datetime(df["Timestamp"], errors="coerce"))
-    jenis = df["KET NOMOR"].map(jenis_resi)
-    nominal = df["NOMINAL"].map(angka)
+def olah_admin(admin: pd.DataFrame) -> pd.DataFrame:
+    """Tab Admin. Baris 2 = judul kolom: NO, TANGGAL, NAMA CS, NAMA DONATUR,
+    NOMOR WA, PROGRAM, KET NOMOR, BANK, NOMINAL. Rekap di kanan diabaikan."""
+    judul = [norm(x) for x in admin.iloc[1]]
+    df = admin.iloc[2:].copy()
+    df.columns = range(df.shape[1])
+
+    def kol(nama):
+        return df[judul.index(nama)]
+
+    tanggal = pd.to_datetime(kol("tanggal"), errors="coerce")
+    jenis = kol("ket nomor").map(jenis_resi)
+    nominal = kol("nominal").map(angka)
     hasil = pd.DataFrame({
         "tanggal": tanggal.dt.normalize(),
-        "kunci": df["NAMA CS"].map(norm),
+        "kunci": kol("nama cs").map(norm),
         "perdana": (jenis == "perdana").astype(int),
         "gulungan": (jenis == "gulungan").astype(int),
         "donasi_perdana": nominal.where(jenis == "perdana", 0.0),
@@ -172,21 +141,33 @@ def olah_recap(isi_xlsx: bytes) -> pd.DataFrame:
     return hasil.groupby(["tanggal", "kunci"], as_index=False).sum()
 
 
-def olah_dana(dana: pd.DataFrame) -> pd.DataFrame:
-    """Dana Iklan: C=Nama Akun, D..H=modal per bulan, I=Jumlah modal,
-    J=Akumulasi (profit/loss total), K=Keterangan (sisa iklan)."""
+def olah_dana(cs_tab: pd.DataFrame) -> pd.DataFrame:
+    """Tab CS: D=Nama Akun, I=Penunaian (modal disetor),
+    O=profit/loss total (judul kolomnya "Spend Iklan"), P=Sisa Dana."""
     rows = []
-    for _, r in dana.iloc[2:].iterrows():
-        nama = r.iloc[2]
-        if norm(nama) in ("", "jumlah"):
+    for _, r in cs_tab.iloc[2:].iterrows():
+        nama = r.iloc[3]
+        if norm(nama) in ("", "nama akun", "jumlah"):
             continue
         rows.append({
             "kunci": norm(nama),
             "modal_iklan": angka(r.iloc[8]),
-            "akumulasi": angka(r.iloc[9]),
-            "sisa_iklan": angka(r.iloc[10]),
+            "akumulasi": angka(r.iloc[14]),
+            "sisa_iklan": angka(r.iloc[15]),
         })
     return pd.DataFrame(rows, columns=["kunci", "modal_iklan", "akumulasi", "sisa_iklan"])
+
+
+def cs_dari_sheet(cs_tab: pd.DataFrame) -> pd.DataFrame:
+    """Daftar CS dari tab CS: nama = Nama Akun, nama lain = nama lengkap."""
+    rows = []
+    for _, r in cs_tab.iloc[2:].iterrows():
+        akun, lengkap = str(r.iloc[3]).strip(), str(r.iloc[1]).strip()
+        if norm(akun) in ("", "nan", "nama akun", "jumlah"):
+            continue
+        rows.append({"nama": akun.title(), "aktif": True,
+                     "nama_lain": "" if norm(lengkap) in ("", "nan", norm(akun)) else lengkap.title()})
+    return pd.DataFrame(rows, columns=["nama", "aktif", "nama_lain"]).drop_duplicates("nama")
 
 
 # =========================================================
@@ -233,12 +214,12 @@ def peta_alias(cs: pd.DataFrame) -> dict:
 def siapkan(isi_xlsx: bytes, cs: pd.DataFrame, isi_recap: bytes | None = None):
     """Hasil: (resi & donasi per hari per CS, dana iklan per CS, nama tak dikenal).
 
-    Resi & donasi dari RECAP kalau isi_recap ada, kalau tidak dari Rekap Admin.
-    Biaya iklan & nomor tidak dari sheet, tapi dari Meta (iklan_meta_rentang).
+    Resi & donasi dari tab Admin, dana dari tab CS. Biaya iklan & nomor tidak
+    dari sheet, tapi dari Meta (iklan_meta_rentang). isi_recap tidak dipakai.
     """
     sheet = baca_sheet(isi_xlsx)
-    resi = olah_recap(isi_recap) if isi_recap else olah_resi(sheet["Rekap Admin"])
-    dana = olah_dana(sheet["Dana Iklan"])
+    resi = olah_admin(sheet["Admin"])
+    dana = olah_dana(sheet["CS"])
 
     peta = peta_alias(cs)
     tak_dikenal = set()
@@ -270,14 +251,14 @@ META_API = "https://graph.facebook.com/v21.0"
 #   kata=None : semua ad set, dicocokkan ke CS lewat nama ad set / campaign
 #   kata="x"  : hanya ad set yang namanya memuat "x", dicatat atas nama `cs`
 def aturan_meta() -> list[dict]:
-    """Aturan akun iklan. ID akun dibaca dari Secrets / .env:
-    META_AKUN_HKM2 dan META_AKUN_HKM3."""
-    return [a for a in [
-        # HKM 2: semua ad set, nama ad set = nama CS
-        {"akun": os.environ.get("META_AKUN_HKM2", ""), "kata": None, "cs": None},
-        # HKM 3: hanya ad set "Bu Zakiyah/..." -> Madina (nomor WA lain diabaikan)
-        {"akun": os.environ.get("META_AKUN_HKM3", ""), "kata": "zakiyah", "cs": "Madina"},
-    ] if a["akun"]]
+    """Akun iklan DMF 3, dari Secrets / .env: META_AKUN (pisahkan koma kalau
+    lebih dari satu, tanpa "act_"). Semua ad set dicocokkan ke CS lewat nama
+    ad set / campaign."""
+    akun = os.environ.get("META_AKUN", "")
+    return [
+        {"akun": a.strip().removeprefix("act_"), "kata": None, "cs": None}
+        for a in akun.split(",") if a.strip()
+    ]
 
 
 def cs_untuk_iklan(akun: str, adset: str, campaign: str, peta: dict):

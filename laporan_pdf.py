@@ -45,7 +45,7 @@ class _PDF(FPDF):
     def header(self):
         self.set_font("Helvetica", "B", 15)
         self.set_text_color(*PINK)
-        self.cell(0, 8, "Laporan Iklan DMF 2", new_x="LMARGIN", new_y="NEXT")
+        self.cell(0, 8, "Laporan Iklan DMF 3", new_x="LMARGIN", new_y="NEXT")
         self.set_font("Helvetica", "", 9)
         self.set_text_color(*ABU)
         dibuat = datetime.now(timezone(timedelta(hours=7))).strftime("%d/%m/%Y %H:%M")
@@ -144,6 +144,6 @@ def buat_pdf(df, total, mulai, akhir) -> bytes:
     pdf.set_font("Helvetica", "", 7.5)
     pdf.set_text_color(*ABU)
     pdf.multi_cell(0, 4, "CPR = Biaya / Nomor  |  ROAS = Donasi Perdana / Biaya  |  Closing = Resi Perdana / Nomor x 100  |  "
-                         "Profit = Donasi Perdana + Gulungan - Biaya. Biaya & nomor dari Meta Ads; resi & donasi dari sheet RECAP.")
+                         "Profit = Donasi Perdana + Gulungan - Biaya. Biaya & nomor dari Meta Ads; resi & donasi dari tab Admin.")
 
     return bytes(pdf.output())

@@ -1,8 +1,8 @@
-# Kebijakan Privasi — Dashboard DMF 2
+# Kebijakan Privasi — Dashboard DMF 3
 
 Terakhir diperbarui: 30 September 2026
 
-Aplikasi **dashboard dmf 2** adalah alat internal milik Pondok Yatim Assalam dan
+Aplikasi **dashboard dmf 3** adalah alat internal milik Pondok Yatim Assalam dan
 Pondok Tahfidz Assalam untuk memantau dan mengelola iklan Meta (Facebook dan
 Instagram) milik lembaga sendiri.
 
