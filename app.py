@@ -484,9 +484,9 @@ def is_admin():
     return st.session_state.get("admin_ok", False)
 
 
-def form_login():
-    st.info("Menu ini khusus admin. Masukkan password untuk mengedit.", icon="🔒")
-    with st.form("login"):
+def form_login(kunci="login", pesan="Menu ini khusus admin. Masukkan password untuk mengedit."):
+    st.info(pesan, icon="🔒")
+    with st.form(kunci):
         pw = st.text_input("Password admin", type="password")
         if st.form_submit_button("Masuk"):
             if pw == password_admin():
@@ -681,7 +681,11 @@ def halaman_laporan(mulai, akhir, performa, dana, cs, status, meta_rentang=None)
     with t2:
         tab_jatah(dana, cs)
     with t3:
-        tab_rekomendasi(df)
+        # Rekomendasi dikunci, password sama dengan admin
+        if is_admin():
+            tab_rekomendasi(df)
+        else:
+            form_login("login_rekomendasi", "Rekomendasi khusus admin. Masukkan password admin untuk melihat.")
 
 
 # =========================================================
